@@ -35,6 +35,15 @@ _HORIZONTAL_FONT_RATIO = 0.08  # base font size as fraction of video height (hor
 _BORDER_RATIO = 0.07          # outline thickness as fraction of font size
 _MIN_BORDER = 4               # minimum outline thickness in pixels
 _PAUSE_THRESHOLD_MS = 300     # gap (ms) between words that forces a new subtitle group
+_SAFE_MARGIN_RATIO = 0.05     # --position: block is clamped this far from top/bottom edges
+
+# --position presets: vertical centre of the subtitle block as a fraction of height
+POSITION_PRESETS: dict[str, float] = {
+    "bottom": 0.85,
+    "lower": 0.75,
+    "middle": 0.5,
+    "top": 0.15,
+}
 
 # Named colors: (R, G, B) for converting to ASS BGR inline tag
 NAMED_COLORS: dict[str, tuple[int, int, int]] = {
@@ -118,6 +127,42 @@ def _compute_text_layout(
     return int(min(size_from_width, size_from_height)), wrapped
 
 
+def parse_position(value: str) -> float:
+    """Parse --position: a preset name or a float from 0.0 (top) to 1.0 (bottom)."""
+    key = value.strip().lower()
+    if key in POSITION_PRESETS:
+        return POSITION_PRESETS[key]
+    presets = ", ".join(POSITION_PRESETS)
+    try:
+        position = float(key)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"invalid position {value!r}: use a number from 0.0 (top) to 1.0 (bottom) "
+            f"or one of: {presets}"
+        ) from None
+    if not 0.0 <= position <= 1.0:  # also rejects nan
+        raise argparse.ArgumentTypeError(
+            f"position {value} is out of range: must be between 0.0 (top) and 1.0 (bottom)"
+        )
+    return position
+
+
+def _block_center_y(
+    position: float, n_lines: int, font_size: int, border: int, height: int
+) -> int:
+    """Return the y pixel for the centre of the subtitle block.
+
+    The block is centred on position * height, then clamped so that every line
+    (including its outline) stays inside a _SAFE_MARGIN_RATIO margin.
+    """
+    half_block = n_lines * font_size * _LINE_HEIGHT_RATIO / 2 + border
+    safe = height * _SAFE_MARGIN_RATIO
+    lowest, highest = safe + half_block, height - safe - half_block
+    if lowest > highest:  # block taller than the safe area; centre it
+        return height // 2
+    return round(min(max(position * height, lowest), highest))
+
+
 def get_video_dimensions(video_path: Path) -> tuple[int, int]:
     """Return (width, height) of the first video stream. Falls back to 1920x1080."""
     try:
@@ -146,6 +191,7 @@ def build_ass(
     animated: bool,
     highlight_color: str,
     max_words: int,
+    position: float | None = None,
 ) -> pysubs2.SSAFile:
     """Build an ASS subtitle file from word-level SRT events.
 
@@ -153,6 +199,9 @@ def build_ass(
     group renders as a single subtitle line. In animated mode each word within
     the group gets its own dialogue line where that word is highlighted and the
     rest are shown in the default color.
+
+    position (0.0 top .. 1.0 bottom) centres each block on that fraction of the
+    height via {\\an5\\pos}; None keeps the default bottom-anchored MarginV layout.
     """
     is_vertical = height > width
     margin_v = height // 3 if is_vertical else 60
@@ -203,6 +252,10 @@ def build_ass(
         font_size, display_text = _compute_text_layout(group_text, width, height, is_vertical)
         border = max(_MIN_BORDER, int(font_size * _BORDER_RATIO))
         fs_tag = f"{{\\fs{font_size}\\bord{border}}}"
+        if position is not None:
+            n_lines = display_text.count(r"\N") + 1
+            y = _block_center_y(position, n_lines, font_size, border, height)
+            fs_tag = f"{{\\an5\\pos({width // 2},{y})\\fs{font_size}\\bord{border}}}"
 
         if not animated:
             ev = pysubs2.SSAEvent()
@@ -316,6 +369,9 @@ examples:
   sub video.mp4 subtitles.srt --animated
   sub video.mp4 subtitles.srt --animated --highlight-color cyan
   sub video.mp4 subtitles.srt --max-words 5 --font Arial
+  sub video.mp4 subtitles.srt --position lower     # solo vertical podcast short
+  sub video.mp4 subtitles.srt --position middle    # split-screen: between the two faces
+  sub video.mp4 subtitles.srt --position 0.6
   sub video.mp4 subtitles.srt -o output.mp4 -q
 """,
     )
@@ -349,6 +405,18 @@ examples:
         type=str,
         default=DEFAULT_HIGHLIGHT_COLOR,
         help=f"Highlight color for animated mode — name or #RRGGBB (default: {DEFAULT_HIGHLIGHT_COLOR!r})",
+    )
+    parser.add_argument(
+        "--position",
+        type=parse_position,
+        default=None,
+        metavar="POS",
+        help=(
+            "Vertical centre of the subtitle block: 0.0 (top) to 1.0 (bottom), or a preset "
+            + ", ".join(f"{k}={v}" for k, v in POSITION_PRESETS.items())
+            + ". Clamped to stay 5%% inside the frame. (default: bottom edge at 2/3 of the "
+            "height for vertical video, 60px above the bottom for horizontal)"
+        ),
     )
     parser.add_argument(
         "-q", "--quiet",
@@ -400,6 +468,7 @@ examples:
         args.font,
         args.animated, args.highlight_color,
         args.max_words,
+        args.position,
     )
 
     # Write ASS to a temp file, burn into video, then clean up

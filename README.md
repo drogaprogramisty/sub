@@ -7,7 +7,7 @@ Takes a video and a **word-level** SRT file, groups words into short on-screen c
 
 - **Static mode** (default): a group of words appears at once, then the next group
 - **Animated mode** (`--animated`): the currently spoken word is highlighted (karaoke-style)
-- Auto-detects vertical (9:16) vs horizontal video and positions subtitles accordingly
+- Auto-detects vertical (9:16) vs horizontal video and positions subtitles accordingly; `--position` overrides the vertical placement
 - Font size is computed from video dimensions; long lines wrap into two balanced lines
 - A pause between words (>300 ms) starts a new subtitle group
 - Audio is copied without re-encoding
@@ -33,6 +33,9 @@ sub video.mp4 subtitles.srt                                  # Creates video_sub
 sub video.mp4 subtitles.srt --animated                       # Highlight the active word
 sub video.mp4 subtitles.srt --animated --highlight-color cyan
 sub video.mp4 subtitles.srt --max-words 5 --font Arial       # 5 words on screen at once
+sub video.mp4 subtitles.srt --position lower                 # Solo vertical podcast short
+sub video.mp4 subtitles.srt --position middle                # Split-screen: on the line between the two faces
+sub video.mp4 subtitles.srt --position 0.6                   # Block centred at 60% of the height
 sub video.mp4 subtitles.srt -o output.mp4 -q                 # Custom output, quiet mode
 sub -h                                                       # All options
 ```
@@ -47,10 +50,19 @@ If `video_sub.mp4` already exists, `video_sub-1.mp4`, `video_sub-2.mp4`, ... are
 | `--highlight-color COLOR` | `#00A6D6` | Highlight color — name or `#RRGGBB` |
 | `--max-words N` | `3` | Max words shown on screen at once |
 | `--font FONT` | `Helvetica Neue` | Font name |
+| `--position POS` | see below | Vertical centre of the subtitle block, `0.0` (top) – `1.0` (bottom), or a preset |
 | `-o OUTPUT` | `<video>_sub.<ext>` | Output video path |
 | `-q` | off | Quiet mode, only prints output path (for CLI/agent usage) |
 
 Named colors: `white`, `yellow`, `cyan`, `green`, `red`, `blue`, `orange`, `magenta`, `black`.
+
+### Position
+
+`--position` sets where the **centre** of the subtitle block sits, as a fraction of the video height. Presets: `top` = 0.15, `middle` = 0.5, `lower` = 0.75, `bottom` = 0.85. Two-line chunks stay centred on the same point, and the block is clamped so no line comes within 5% of the top or bottom edge (so `0.0` and `1.0` mean "as high/low as is safe").
+
+Without `--position` the placement is unchanged: the bottom edge of the block sits at 2/3 of the height in vertical video and 60 px above the bottom in horizontal video.
+
+Vertical podcast shorts: use `--position lower` for a solo layout and `--position middle` for a top/bottom split-screen, so the captions sit on the line between the two faces.
 
 ## Full pipeline: transcribe → burn
 
@@ -77,6 +89,7 @@ sub video.mp4 video.srt --animated               # Highlight the active word
 sub video.mp4 video.srt --highlight-color cyan   # Highlight color: name or #RRGGBB
 sub video.mp4 video.srt --max-words 5            # Words on screen at once (default 3)
 sub video.mp4 video.srt --font Arial             # Custom font
+sub video.mp4 video.srt --position middle        # Vertical centre: 0.0 (top)–1.0 (bottom) or top|middle|lower|bottom
 sub video.mp4 video.srt -o out.mp4 -q            # Custom output path, quiet mode (prints output path only)
 sub -h                                           # for help / all options
 ```

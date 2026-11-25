@@ -15,6 +15,9 @@ uv tool install --editable .
 # Run the CLI
 python3 sub.py video.mp4 subtitles.srt
 
+# Run tests
+uv run pytest
+
 # Lint/format with ruff
 ruff check sub.py
 ruff format sub.py
@@ -44,6 +47,8 @@ Always use `python3` (not `python`).
 **Vertical vs horizontal detection:**
 - `height > width` → vertical video (TikTok-style): `MarginV = height / 3`
 - Otherwise → horizontal: `MarginV = 60`
+
+**`--position`** (`parse_position()`, presets in `POSITION_PRESETS`): when set, each event gets `{\an5\pos(width/2,y)}` so the block's centre sits at `position * height`; `_block_center_y()` estimates block height (`lines × fs × _LINE_HEIGHT_RATIO + 2 × border`) and clamps it inside `_SAFE_MARGIN_RATIO` (5%) of top/bottom. When unset (default), no `\an`/`\pos` is emitted and the MarginV layout above applies unchanged.
 
 **Text layout (`_compute_text_layout()`):** per group, base font size is `_VERTICAL_FONT_RATIO` (0.08) × width for vertical or `_HORIZONTAL_FONT_RATIO` (0.08) × height for horizontal. Text width is estimated with `_CHAR_WIDTH_RATIO`; if one line doesn't fit within `_MARGIN_RATIO` side margins it wraps into two balanced lines (`_wrap_two_lines()`), and only scales the font down as a last resort (block height capped by `_MAX_BLOCK_HEIGHT_RATIO`). Applied as inline `{\fs..\bord..}` tags per event.
 

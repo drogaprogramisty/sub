@@ -10,7 +10,8 @@ import re
 import subprocess
 import sys
 import tempfile
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 import pysubs2
@@ -26,16 +27,19 @@ DEFAULT_MAX_WORDS = 3
 DEFAULT_HIGHLIGHT_COLOR = "#00A6D6"  # previous default: "yellow"
 
 # Auto font-size tuning
-_MARGIN_RATIO = 0.05          # safe margin on each horizontal side
+_MARGIN_RATIO = 0.05  # safe margin on each horizontal side
 _MAX_BLOCK_HEIGHT_RATIO = 0.30  # subtitle block must not exceed this fraction of height
-_CHAR_WIDTH_RATIO = 0.55      # estimated char width as fraction of font size (Helvetica Neue)
-_LINE_HEIGHT_RATIO = 1.3      # line height as fraction of font size
-_VERTICAL_FONT_RATIO = 0.08   # base font size as fraction of video width  (vertical/portrait)
-_HORIZONTAL_FONT_RATIO = 0.08  # base font size as fraction of video height (horizontal/landscape)
-_BORDER_RATIO = 0.07          # outline thickness as fraction of font size
-_MIN_BORDER = 4               # minimum outline thickness in pixels
-_PAUSE_THRESHOLD_MS = 300     # gap (ms) between words that forces a new subtitle group
-_SAFE_MARGIN_RATIO = 0.05     # --position: block is clamped this far from top/bottom edges
+# estimated char width as fraction of font size (Helvetica Neue)
+_CHAR_WIDTH_RATIO = 0.55
+_LINE_HEIGHT_RATIO = 1.3  # line height as fraction of font size
+# base font size as fraction of video width (vertical/portrait)
+_VERTICAL_FONT_RATIO = 0.08
+# base font size as fraction of video height (horizontal/landscape)
+_HORIZONTAL_FONT_RATIO = 0.08
+_BORDER_RATIO = 0.07  # outline thickness as fraction of font size
+_MIN_BORDER = 4  # minimum outline thickness in pixels
+_PAUSE_THRESHOLD_MS = 300  # gap (ms) between words that forces a new subtitle group
+_SAFE_MARGIN_RATIO = 0.05  # --position: block is clamped this far from top/bottom edges
 
 # --position presets: vertical centre of the subtitle block as a fraction of height
 POSITION_PRESETS: dict[str, float] = {
@@ -104,7 +108,9 @@ def _compute_text_layout(
     available_width = width * (1 - 2 * _MARGIN_RATIO)
     max_block_height = height * _MAX_BLOCK_HEIGHT_RATIO
 
-    base = int(width * _VERTICAL_FONT_RATIO if is_vertical else height * _HORIZONTAL_FONT_RATIO)
+    base = int(
+        width * _VERTICAL_FONT_RATIO if is_vertical else height * _HORIZONTAL_FONT_RATIO
+    )
 
     def text_px(t: str, size: int) -> float:
         return len(t) * size * _CHAR_WIDTH_RATIO
@@ -118,7 +124,10 @@ def _compute_text_layout(
     lines = wrapped.split(r"\N")
     longest = max(lines, key=len)
     two_line_height = base * _LINE_HEIGHT_RATIO * 2
-    if text_px(longest, base) <= available_width and two_line_height <= max_block_height:
+    if (
+        text_px(longest, base) <= available_width
+        and two_line_height <= max_block_height
+    ):
         return base, wrapped
 
     # Scale down to fit two lines
@@ -168,9 +177,14 @@ def get_video_dimensions(video_path: Path) -> tuple[int, int]:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "quiet",
-                "-print_format", "json",
-                "-show_streams", "-select_streams", "v:0",
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-select_streams",
+                "v:0",
                 str(video_path),
             ],
             capture_output=True,
@@ -179,7 +193,7 @@ def get_video_dimensions(video_path: Path) -> tuple[int, int]:
         )
         stream = json.loads(result.stdout)["streams"][0]
         return int(stream["width"]), int(stream["height"])
-    except Exception:
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError):
         return 1920, 1080
 
 
@@ -217,12 +231,12 @@ def build_ass(
     style = pysubs2.SSAStyle()
     style.fontname = font
     style.fontsize = base_font_size
-    style.primarycolor = pysubs2.Color(255, 255, 255, 0)   # white, opaque
-    style.outlinecolor = pysubs2.Color(0, 0, 0, 0)         # black outline
-    style.backcolor = pysubs2.Color(0, 0, 0, 255)          # fully transparent bg
+    style.primarycolor = pysubs2.Color(255, 255, 255, 0)  # white, opaque
+    style.outlinecolor = pysubs2.Color(0, 0, 0, 0)  # black outline
+    style.backcolor = pysubs2.Color(0, 0, 0, 255)  # fully transparent bg
     style.outline = max(_MIN_BORDER, int(base_font_size * _BORDER_RATIO))
     style.shadow = 0
-    style.alignment = 2   # bottom-center (SSA numpad layout)
+    style.alignment = 2  # bottom-center (SSA numpad layout)
     style.marginv = margin_v
     output.styles["Default"] = style
 
@@ -249,7 +263,9 @@ def build_ass(
         group_end = group[-1].end
         group_text = " ".join(words)
 
-        font_size, display_text = _compute_text_layout(group_text, width, height, is_vertical)
+        font_size, display_text = _compute_text_layout(
+            group_text, width, height, is_vertical
+        )
         border = max(_MIN_BORDER, int(font_size * _BORDER_RATIO))
         fs_tag = f"{{\\fs{font_size}\\bord{border}}}"
         if position is not None:
@@ -283,7 +299,9 @@ def build_ass(
                     word_timings.append((w, w_start, w_end))
 
             for i, (_, win_start, _) in enumerate(word_timings):
-                win_end = word_timings[i + 1][1] if i + 1 < len(word_timings) else group_end
+                win_end = (
+                    word_timings[i + 1][1] if i + 1 < len(word_timings) else group_end
+                )
 
                 word_idx = 0
                 line_strings = []
@@ -335,10 +353,14 @@ def burn_subtitles(
 
     cmd = [
         "ffmpeg",
-        "-v", "quiet" if quiet else "warning",
-        "-i", str(video_path),
-        "-vf", f"ass={ass_str}",
-        "-c:a", "copy",
+        "-v",
+        "quiet" if quiet else "warning",
+        "-i",
+        str(video_path),
+        "-vf",
+        f"ass={ass_str}",
+        "-c:a",
+        "copy",
         "-y",
         str(output_path),
     ]
@@ -375,11 +397,14 @@ examples:
   sub video.mp4 subtitles.srt -o output.mp4 -q
 """,
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     parser.add_argument("video", help="Input video file")
     parser.add_argument("srt", help="Word-level SRT subtitle file")
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=str,
         help="Output video path (default: <video>_sub.<ext>)",
     )
@@ -419,7 +444,8 @@ examples:
         ),
     )
     parser.add_argument(
-        "-q", "--quiet",
+        "-q",
+        "--quiet",
         action="store_true",
         help="Suppress all output except the output file path",
     )
@@ -450,7 +476,7 @@ examples:
 
     try:
         subs = pysubs2.load(str(srt_path))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — any load failure is reported, not raised
         if not args.quiet:
             print(f"Error: Failed to load SRT: {e}", file=sys.stderr)
         sys.exit(1)
@@ -464,9 +490,11 @@ examples:
 
     ass_file = build_ass(
         subs.events,
-        width, height,
+        width,
+        height,
         args.font,
-        args.animated, args.highlight_color,
+        args.animated,
+        args.highlight_color,
         args.max_words,
         args.position,
     )
